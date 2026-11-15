@@ -1,0 +1,6 @@
+snake
+snake.exe
+*.obj
+*.pdb
+*.ilk
+odin-bin/

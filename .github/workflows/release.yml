@@ -1,0 +1,93 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install X11 dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libx11-dev libxi-dev libxrandr-dev \
+               libxinerama-dev libxcursor-dev libgl1-mesa-dev
+
+      - name: Download Odin
+        run: |
+          curl -L -o /tmp/odin.tar.gz \
+            https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-linux-amd64-dev-2026-11a.tar.gz
+          mkdir -p /tmp/odin
+          tar xzf /tmp/odin.tar.gz -C /tmp/odin --strip-components=1
+
+      - name: Build
+        run: /tmp/odin/odin build . -o:speed -out:snake
+
+      - name: Test
+        run: ./snake selftest
+
+      - name: Package
+        run: tar czf snake-linux-amd64.tar.gz snake
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snake-linux-amd64
+          path: snake-linux-amd64.tar.gz
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install LLVM
+        run: choco install llvm -y
+
+      - name: Add LLVM to PATH
+        shell: pwsh
+        run: echo "$env:ProgramFiles\LLVM\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+      - name: Download Odin
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/odin-lang/Odin/releases/download/dev-2026-11a/odin-windows-amd64-dev-2026-11a.zip" -OutFile "$env:RUNNER_TEMP\odin.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\odin.zip" -DestinationPath "$env:RUNNER_TEMP\odin"
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $odin = (Get-ChildItem "$env:RUNNER_TEMP\odin" -Recurse -Filter odin.exe | Select-Object -First 1).FullName
+          & $odin build . -o:speed -out:snake.exe
+
+      - name: Test
+        shell: pwsh
+        run: ./snake.exe selftest
+
+      - name: Package
+        shell: pwsh
+        run: Compress-Archive -Path snake.exe -DestinationPath snake-windows-amd64.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snake-windows-amd64
+          path: snake-windows-amd64.zip
+
+  release:
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            snake-linux-amd64.tar.gz
+            snake-windows-amd64.zip
+          generate_release_notes: true
